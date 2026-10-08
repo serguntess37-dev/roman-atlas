@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Рим по Ливию — карта</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+  #map { position: absolute; top: 0; bottom: 96px; left: 0; right: 0; }
+  #panel {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 96px;
+    background: #1e1b16; color: #f1e9d8; padding: 8px 12px; box-sizing: border-box;
+  }
+  #row1 { display: flex; align-items: center; gap: 10px; }
+  #year { font-size: 20px; font-weight: 600; min-width: 110px; }
+  #slider { flex: 1; }
+  button { background: #8b2e2e; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 16px; }
+  #layers { margin-top: 8px; display: flex; gap: 16px; font-size: 15px; flex-wrap: wrap; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <div id="row1">
+    <button id="play">▶</button>
+    <div id="year"></div>
+    <input id="slider" type="range" min="-753" max="-9" value="-753" step="1">
+  </div>
+  <div id="layers"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ============ 1. ДАННЫЕ — сюда добавляешь свои события ============
+// Годы до н.э. записываем отрицательными числами: -753 = 753 г. до н.э.
+// layer: "settlements" | "wars" | "resources"
+// start — с какого года точка появляется
+// end   — когда событие закончилось (после этого точка бледнеет); null = остаётся навсегда
+// Даты и координаты приблизительные — сверяй с периохами и правь!
+const EVENTS = [
+  // --- Поселения ---
+  { layer: "settlements", name: "Основание Рима", lat: 41.89, lng: 12.49, start: -753, end: null, text: "Традиционная дата основания города Ромулом." },
+  { layer: "settlements", name: "Альба-Лонга разрушена", lat: 41.75, lng: 12.65, start: -650, end: null, text: "Разрушена при Тулле Гостилии (традиционная дата, примерно)." },
+  { layer: "settlements", name: "Остия", lat: 41.76, lng: 12.29, start: -640, end: null, text: "Традиционно основана при Анке Марции (примерно)." },
+  { layer: "settlements", name: "Ариминум (колония)", lat: 44.06, lng: 12.57, start: -268, end: null, text: "Латинская колония на Адриатике." },
+  { layer: "settlements", name: "Плацентия и Кремона", lat: 45.05, lng: 9.69, start: -218, end: null, text: "Колонии на реке По накануне войны с Ганнибалом." },
+  { layer: "settlements", name: "Аквилея", lat: 45.77, lng: 13.37, start: -181, end: null, text: "Колония на северо-востоке Италии." },
+  { layer: "settlements", name: "Нарбон (Narbo Martius)", lat: 43.18, lng: 3.0, start: -118, end: null, text: "Первая римская колония в Заальпийской Галлии." },
+
+  // --- Войны ---
+  { layer: "wars", name: "Галльское нашествие", lat: 41.89, lng: 12.49, start: -390, end: -387, text: "Поражение на Аллии и захват Рима галлами." },
+  { layer: "wars", name: "Самнитские войны", lat: 41.2, lng: 14.5, start: -343, end: -290, text: "Три войны за господство в Средней Италии." },
+  { layer: "wars", name: "Война с Пирром", lat: 41.13, lng: 14.78, start: -280, end: -275, text: "Пирр Эпирский в Италии; битва при Беневенте — 275." },
+  { layer: "wars", name: "Первая Пуническая война", lat: 37.5, lng: 14.0, start: -264, end: -241, text: "Борьба с Карфагеном за Сицилию." },
+  { layer: "wars", name: "Вторая Пуническая война", lat: 45.0, lng: 7.0, start: -218, end: -201, text: "Ганнибал переходит Альпы." },
+  { layer: "wars", name: "Канны", lat: 41.3, lng: 16.13, start: -216, end: -211, text: "Крупнейшее поражение римлян от Ганнибала." },
+  { layer: "wars", name: "Зама", lat: 36.0, lng: 9.4, start: -202, end: -197, text: "Сципион побеждает Ганнибала (местоположение примерное)." },
+  { layer: "wars", name: "Македонские войны", lat: 40.4, lng: 22.6, start: -214, end: -168, text: "Серия войн; Пидна — 168." },
+  { layer: "wars", name: "Третья Пуническая война", lat: 36.85, lng: 10.32, start: -149, end: -146, text: "Разрушение Карфагена." },
+  { layer: "wars", name: "Нумантинская война", lat: 41.78, lng: -2.44, start: -154, end: -133, text: "Война в Испании, падение Нуманции." },
+  { layer: "wars", name: "Югуртинская война", lat: 36.37, lng: 6.61, start: -112, end: -105, text: "Война в Нумидии." },
+  { layer: "wars", name: "Союзническая война", lat: 42.5, lng: 14.0, start: -91, end: -88, text: "Восстание италийских союзников." },
+  { layer: "wars", name: "Восстание Спартака", lat: 40.8, lng: 14.4, start: -73, end: -71, text: "Начато у Капуи, закончено в Апулии/Луканье." },
+  { layer: "wars", name: "Галльская война Цезаря", lat: 47.54, lng: 4.5, start: -58, end: -50, text: "Завоевание Галлии; осада Алезии — 52." },
+  { layer: "wars", name: "Фарсал", lat: 39.28, lng: 22.38, start: -48, end: -45, text: "Цезарь побеждает Помпея." },
+  { layer: "wars", name: "Акций", lat: 38.93, lng: 20.76, start: -31, end: -30, text: "Октавиан побеждает Антония и Клеопатру." },
+
+  // --- Ресурсы ---
+  { layer: "resources", name: "Соль Остии", lat: 41.73, lng: 12.26, start: -640, end: null, text: "Соляные промыслы у устья Тибра." },
+  { layer: "resources", name: "Зерно Сицилии", lat: 37.6, lng: 14.2, start: -241, end: null, text: "Первая провинция; важнейший источник хлеба." },
+  { layer: "resources", name: "Зерно Сардинии и Корсики", lat: 40.0, lng: 9.0, start: -238, end: null, text: "Провинция после Первой Пунической войны." },
+  { layer: "resources", name: "Серебро Нового Карфагена", lat: 37.58, lng: -1.0, start: -209, end: null, text: "Испанские серебряные рудники." },
+  { layer: "resources", name: "Рудники Македонии", lat: 41.0, lng: 23.5, start: -167, end: null, text: "После Пидны Македония реорганизована; проверь по Ливию, что с рудниками." },
+  { layer: "resources", name: "Провинция Азия", lat: 39.1, lng: 27.2, start: -133, end: null, text: "Наследство Аттала III Пергамского." },
+  { layer: "resources", name: "Зерно Египта", lat: 30.8, lng: 31.0, start: -30, end: null, text: "Египет после Акция — личное владение Октавиана." }
+];
+
+const LAYERS = {
+  settlements: { label: "Поселения", color: "#2e7d32" },
+  wars:        { label: "Войны",     color: "#c62828" },
+  resources:   { label: "Ресурсы",   color: "#f9a825" }
+};
+
+// ============ 2. КАРТА ============
+const map = L.map("map").setView([41.9, 12.5], 5);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 18,
+  attribution: "© OpenStreetMap"
+}).addTo(map);
+
+// Для каждого слоя — своя группа маркеров, чтобы включать/выключать целиком
+const groups = {};
+for (const key in LAYERS) groups[key] = L.layerGroup().addTo(map);
+
+// Создаём маркеры один раз; потом только меняем их вид
+const markers = EVENTS.map(ev => {
+  const m = L.circleMarker([ev.lat, ev.lng], {
+    radius: 9, color: "#222", weight: 1,
+    fillColor: LAYERS[ev.layer].color, fillOpacity: 0.9
+  });
+  m.bindPopup(`<b>${ev.name}</b><br>${formatYear(ev.start)}` +
+              (ev.end ? ` — ${formatYear(ev.end)}` : "") + `<br>${ev.text}`);
+  return { ev, m };
+});
+
+// ============ 3. ЛОГИКА ПО ГОДАМ ============
+function formatYear(y) { return y < 0 ? `${-y} г. до н.э.` : `${y} г. н.э.`; }
+
+function update(year) {
+  document.getElementById("year").textContent = formatYear(year);
+  for (const { ev, m } of markers) {
+    const group = groups[ev.layer];
+    if (year < ev.start) {
+      group.removeLayer(m);                       // событие ещё не наступило
+    } else {
+      group.addLayer(m);
+      const finished = ev.end !== null && year > ev.end;
+      m.setStyle({
+        fillOpacity: finished ? 0.25 : 0.9,       // закончилось — бледнеет
+        opacity: finished ? 0.4 : 1,
+        radius: finished ? 6 : 9
+      });
+    }
+  }
+}
+
+const slider = document.getElementById("slider");
+slider.addEventListener("input", () => update(+slider.value));
+
+// ============ 4. ПЕРЕКЛЮЧАТЕЛИ СЛОЁВ ============
+const layersDiv = document.getElementById("layers");
+for (const key in LAYERS) {
+  const label = document.createElement("label");
+  label.innerHTML = `<input type="checkbox" checked>
+    <span class="dot" style="background:${LAYERS[key].color}"></span>${LAYERS[key].label}`;
+  label.querySelector("input").addEventListener("change", e => {
+    e.target.checked ? map.addLayer(groups[key]) : map.removeLayer(groups[key]);
+  });
+  layersDiv.appendChild(label);
+}
+
+// ============ 5. КНОПКА PLAY ============
+let timer = null;
+document.getElementById("play").addEventListener("click", e => {
+  if (timer) { clearInterval(timer); timer = null; e.target.textContent = "▶"; return; }
+  e.target.textContent = "⏸";
+  timer = setInterval(() => {
+    if (+slider.value >= +slider.max) { clearInterval(timer); timer = null; e.target.textContent = "▶"; return; }
+    slider.value = +slider.value + 2;
+    update(+slider.value);
+  }, 60);
+});
+
+update(+slider.value);
+</script>
+</body>
+</html>
